@@ -1,0 +1,7 @@
+.next
+node_modules
+src/generated
+prisma/migrations
+pnpm-lock.yaml
+package-lock.json
+*.md

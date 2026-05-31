@@ -1,0 +1,21 @@
+services:
+  db:
+    image: pgvector/pgvector:pg16
+    container_name: resumeiq-db
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: resumeiq
+      POSTGRES_PASSWORD: resumeiq
+      POSTGRES_DB: resumeiq
+    ports:
+      - "5432:5432"
+    volumes:
+      - resumeiq_pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U resumeiq"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+volumes:
+  resumeiq_pgdata:

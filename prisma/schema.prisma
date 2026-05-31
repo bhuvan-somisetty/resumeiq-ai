@@ -1,0 +1,305 @@
+// ResumeIQ AI — Prisma schema
+// See /docs/03-Database-Schema.md. Vector columns for embeddings are added via a
+// companion raw-SQL migration (§3.6); Prisma manages everything else.
+
+generator client {
+  provider        = "prisma-client-js"
+  output          = "../src/generated/prisma"
+  previewFeatures = ["postgresqlExtensions"]
+}
+
+datasource db {
+  provider   = "postgresql"
+  url        = env("DATABASE_URL")
+  extensions = [vector]
+}
+
+// ──────────────────────────── Identity & Billing ────────────────────────────
+
+enum Plan {
+  FREE
+  PRO
+  TEAMS
+}
+
+model User {
+  id        String   @id @default(cuid())
+  clerkId   String   @unique
+  email     String   @unique
+  name      String?
+  imageUrl  String?
+  plan      Plan     @default(FREE)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  resumes         Resume[]
+  analyses        Analysis[]
+  jobDescriptions JobDescription[]
+  subscription    Subscription?
+  usageRecords    UsageRecord[]
+  auditLogs       AuditLog[]
+
+  @@index([clerkId])
+}
+
+enum SubscriptionStatus {
+  INCOMPLETE
+  ACTIVE
+  PAST_DUE
+  CANCELED
+  TRIALING
+}
+
+model Subscription {
+  id                   String             @id @default(cuid())
+  userId               String             @unique
+  user                 User               @relation(fields: [userId], references: [id], onDelete: Cascade)
+  stripeCustomerId     String             @unique
+  stripeSubscriptionId String?            @unique
+  stripePriceId        String?
+  status               SubscriptionStatus @default(INCOMPLETE)
+  currentPeriodEnd     DateTime?
+  cancelAtPeriodEnd    Boolean            @default(false)
+  createdAt            DateTime           @default(now())
+  updatedAt            DateTime           @updatedAt
+
+  @@index([stripeCustomerId])
+}
+
+// ──────────────────────────── Resume domain ────────────────────────────
+
+enum FileType {
+  PDF
+  DOCX
+}
+
+enum ParseStatus {
+  PENDING
+  PROCESSING
+  COMPLETED
+  FAILED
+}
+
+model Resume {
+  id               String   @id @default(cuid())
+  userId           String
+  user             User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  title            String
+  currentVersionId String?  @unique
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+
+  versions ResumeVersion[]
+  analyses Analysis[]
+
+  @@index([userId])
+}
+
+model ResumeVersion {
+  id            String      @id @default(cuid())
+  resumeId      String
+  resume        Resume      @relation(fields: [resumeId], references: [id], onDelete: Cascade)
+  versionNumber Int
+  // Storage (UploadThing)
+  fileKey       String
+  fileUrl       String
+  fileName      String
+  fileType      FileType
+  fileSize      Int
+  // Parsing
+  parseStatus   ParseStatus @default(PENDING)
+  rawText       String?     @db.Text
+  parsed        Json?
+  parseError    String?
+  createdAt     DateTime    @default(now())
+  updatedAt     DateTime    @updatedAt
+
+  analyses   Analysis[]
+  embeddings SectionEmbedding[]
+
+  @@unique([resumeId, versionNumber])
+  @@index([resumeId])
+}
+
+model JobDescription {
+  id        String   @id @default(cuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  title     String?
+  company   String?
+  rawText   String   @db.Text
+  parsed    Json?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  analyses   Analysis[]
+  embeddings JdEmbedding[]
+
+  @@index([userId])
+}
+
+// ──────────────────────────── Analysis domain ────────────────────────────
+
+enum AnalysisStatus {
+  PENDING
+  RUNNING
+  COMPLETED
+  FAILED
+}
+
+enum AnalysisType {
+  STANDALONE
+  JD_MATCH
+}
+
+model Analysis {
+  id               String          @id @default(cuid())
+  userId           String
+  user             User            @relation(fields: [userId], references: [id], onDelete: Cascade)
+  resumeId         String
+  resume           Resume          @relation(fields: [resumeId], references: [id], onDelete: Cascade)
+  resumeVersionId  String
+  resumeVersion    ResumeVersion   @relation(fields: [resumeVersionId], references: [id], onDelete: Cascade)
+  jobDescriptionId String?
+  jobDescription   JobDescription? @relation(fields: [jobDescriptionId], references: [id], onDelete: SetNull)
+
+  status AnalysisStatus @default(PENDING)
+  type   AnalysisType   @default(STANDALONE)
+
+  overallScore Int?
+  subScores    Json?
+  summary      String? @db.Text
+
+  rubricVersion String?
+  modelUsed     String?
+  tokensInput   Int?
+  tokensOutput  Int?
+  costCents     Int?
+  failureReason String?
+
+  startedAt   DateTime?
+  completedAt DateTime?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  atsReport   AtsReport?
+  matchResult MatchResult?
+  suggestions Suggestion[]
+
+  @@index([userId])
+  @@index([resumeId])
+  @@index([status])
+}
+
+model AtsReport {
+  id         String   @id @default(cuid())
+  analysisId String   @unique
+  analysis   Analysis @relation(fields: [analysisId], references: [id], onDelete: Cascade)
+  score      Int
+  findings   Json
+  createdAt  DateTime @default(now())
+}
+
+model MatchResult {
+  id              String   @id @default(cuid())
+  analysisId      String   @unique
+  analysis        Analysis @relation(fields: [analysisId], references: [id], onDelete: Cascade)
+  matchScore      Int
+  matched         Json
+  weak            Json
+  missing         Json
+  keywordCoverage Json
+  createdAt       DateTime @default(now())
+}
+
+enum SuggestionCategory {
+  IMPACT
+  CLARITY
+  KEYWORDS
+  ATS
+  STRUCTURE
+  CONTENT_GAP
+}
+
+enum SuggestionPriority {
+  HIGH
+  MEDIUM
+  LOW
+}
+
+model Suggestion {
+  id         String             @id @default(cuid())
+  analysisId String
+  analysis   Analysis           @relation(fields: [analysisId], references: [id], onDelete: Cascade)
+  category   SuggestionCategory
+  priority   SuggestionPriority
+  section    String?
+  title      String
+  rationale  String             @db.Text
+  before     String?            @db.Text
+  after      String?            @db.Text
+  applied    Boolean            @default(false)
+  helpful    Boolean?
+  createdAt  DateTime           @default(now())
+
+  @@index([analysisId])
+}
+
+// ──────────────────────────── Embeddings (pgvector) ────────────────────────────
+// NOTE: `embedding vector(1536)` columns + HNSW indexes are added via raw SQL
+// migration (see /docs/03-Database-Schema.md §3.6).
+
+model SectionEmbedding {
+  id              String        @id @default(cuid())
+  resumeVersionId String
+  resumeVersion   ResumeVersion @relation(fields: [resumeVersionId], references: [id], onDelete: Cascade)
+  section         String
+  content         String        @db.Text
+  createdAt       DateTime      @default(now())
+
+  @@index([resumeVersionId])
+}
+
+model JdEmbedding {
+  id               String         @id @default(cuid())
+  jobDescriptionId String
+  jobDescription   JobDescription @relation(fields: [jobDescriptionId], references: [id], onDelete: Cascade)
+  chunk            String         @db.Text
+  createdAt        DateTime       @default(now())
+
+  @@index([jobDescriptionId])
+}
+
+// ──────────────────────────── Usage & Audit ────────────────────────────
+
+enum UsageType {
+  ANALYSIS_STANDALONE
+  ANALYSIS_JD_MATCH
+  EXPORT
+}
+
+model UsageRecord {
+  id         String    @id @default(cuid())
+  userId     String
+  user       User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  type       UsageType
+  analysisId String?
+  costCents  Int?
+  metadata   Json?
+  createdAt  DateTime  @default(now())
+
+  @@index([userId, createdAt])
+}
+
+model AuditLog {
+  id        String   @id @default(cuid())
+  userId    String?
+  user      User?    @relation(fields: [userId], references: [id], onDelete: SetNull)
+  action    String
+  targetId  String?
+  metadata  Json?
+  ip        String?
+  createdAt DateTime @default(now())
+
+  @@index([userId, createdAt])
+}
