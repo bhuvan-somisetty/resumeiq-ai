@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { UserButton } from "@clerk/nextjs";
+import { UserButton } from "@/components/auth/clerk-gate";
 import { LayoutDashboard, FileText, CreditCard } from "lucide-react";
 import { Logo } from "@/components/marketing/logo";
 import { ThemeToggle } from "@/components/theme-toggle";

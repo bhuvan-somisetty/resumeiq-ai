@@ -20,8 +20,8 @@ const faqs = [
     a: "PDF and DOCX, up to 10MB. For best results, upload a text-based PDF rather than a scanned image.",
   },
   {
-    q: "What's the difference between free and Pro?",
-    a: "Free gives you 3 analyses a month with full ResumeScore and ATS reports. Pro unlocks unlimited analyses, job-description matching, exports, version history, and deep-reasoning mode.",
+    q: "Do I need an account?",
+    a: "No. Every analysis is free and unlimited — upload a resume and get your full ResumeScore, ATS report, and job-description matching with no account and no limits. Sign up only if you want to save your history and track progress over time.",
   },
   {
     q: "Is my data private?",

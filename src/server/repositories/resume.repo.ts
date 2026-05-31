@@ -1,9 +1,12 @@
 import "server-only";
 import { db } from "@/server/db";
+import { isDemoMode } from "@/lib/dev-mode";
+import { demoStore } from "@/server/demo/store";
 import type { FileType, Prisma } from "@/generated/prisma";
 
 export const resumeRepo = {
   listByUser(userId: string) {
+    if (isDemoMode()) return Promise.resolve(demoStore.listResumes(userId));
     return db.resume.findMany({
       where: { userId },
       orderBy: { updatedAt: "desc" },
@@ -20,6 +23,7 @@ export const resumeRepo = {
   },
 
   findOwned(id: string, userId: string) {
+    if (isDemoMode()) return Promise.resolve(demoStore.findResume(id, userId));
     return db.resume.findFirst({
       where: { id, userId },
       include: {
@@ -33,6 +37,7 @@ export const resumeRepo = {
   },
 
   create(userId: string, title: string) {
+    if (isDemoMode()) return Promise.resolve(demoStore.createResume(userId, title));
     return db.resume.create({ data: { userId, title } });
   },
 
@@ -46,6 +51,7 @@ export const resumeRepo = {
       fileSize: number;
     },
   ) {
+    if (isDemoMode()) return demoStore.addVersion(resumeId, data);
     const count = await db.resumeVersion.count({ where: { resumeId } });
     const version = await db.resumeVersion.create({
       data: { resumeId, versionNumber: count + 1, ...data },
@@ -61,14 +67,18 @@ export const resumeRepo = {
     versionId: string,
     data: Prisma.ResumeVersionUpdateInput,
   ) {
+    if (isDemoMode())
+      return Promise.resolve(demoStore.updateVersionParse(versionId, data));
     return db.resumeVersion.update({ where: { id: versionId }, data });
   },
 
   findVersion(versionId: string) {
+    if (isDemoMode()) return Promise.resolve(demoStore.findVersion(versionId));
     return db.resumeVersion.findUnique({ where: { id: versionId } });
   },
 
   delete(id: string, userId: string) {
+    if (isDemoMode()) return Promise.resolve(demoStore.deleteResume(id, userId));
     return db.resume.deleteMany({ where: { id, userId } });
   },
 };

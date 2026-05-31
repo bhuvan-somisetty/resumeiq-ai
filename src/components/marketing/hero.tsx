@@ -67,8 +67,8 @@ export function Hero() {
             className="mt-9 flex flex-col items-center justify-center gap-3 sm:flex-row"
           >
             <Button size="lg" asChild className="w-full sm:w-auto">
-              <Link href="/sign-up">
-                Analyze my resume — free
+              <Link href="/analyze">
+                Upload resume — free
                 <ArrowRight className="size-4" />
               </Link>
             </Button>
@@ -82,7 +82,7 @@ export function Hero() {
             </Button>
           </motion.div>
           <p className="mt-4 text-xs text-muted-foreground">
-            No credit card required · 3 free analyses every month
+            No account required · unlimited free analyses
           </p>
         </div>
 

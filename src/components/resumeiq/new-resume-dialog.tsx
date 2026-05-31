@@ -17,10 +17,13 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { useUploadThing } from "@/lib/uploadthing";
+import { isDemoMode } from "@/lib/dev-mode";
 import { MAX_FILE_BYTES } from "@/lib/constants";
 import { cn, formatBytes } from "@/lib/utils";
 
 type Step = "title" | "upload" | "parsing";
+
+const demo = isDemoMode();
 
 export function NewResumeDialog({
   trigger,
@@ -34,16 +37,13 @@ export function NewResumeDialog({
   const [resumeId, setResumeId] = React.useState<string | null>(null);
   const [creating, setCreating] = React.useState(false);
   const [dragging, setDragging] = React.useState(false);
+  const [demoUploading, setDemoUploading] = React.useState(false);
+  const [progress, setProgress] = React.useState(0);
   const inputRef = React.useRef<HTMLInputElement>(null);
 
-  const { startUpload, isUploading } = useUploadThing("resumeUploader", {
-    onClientUploadComplete: async (res) => {
-      const data = res?.[0]?.serverData;
-      if (!data) {
-        toast.error("Upload finished but no file was returned.");
-        setStep("upload");
-        return;
-      }
+  // After a file lands (via UploadThing or demo upload), parse it and navigate.
+  const afterUpload = React.useCallback(
+    async (data: { resumeId: string; versionId: string }) => {
       setStep("parsing");
       try {
         const r = await fetch(
@@ -63,17 +63,67 @@ export function NewResumeDialog({
         setStep("upload");
       }
     },
+    [router],
+  );
+
+  const { startUpload, isUploading } = useUploadThing("resumeUploader", {
+    onClientUploadComplete: async (res) => {
+      const data = res?.[0]?.serverData;
+      if (!data) {
+        toast.error("Upload finished but no file was returned.");
+        setStep("upload");
+        return;
+      }
+      await afterUpload(data);
+    },
     onUploadError: (e) => {
       toast.error(e.message || "Upload failed");
       setStep("upload");
     },
   });
 
+  // Demo mode upload: POST the file to the local handler with progress.
+  function demoUpload(file: File, resumeIdArg: string) {
+    setDemoUploading(true);
+    setProgress(0);
+    const form = new FormData();
+    form.append("file", file);
+    form.append("resumeId", resumeIdArg);
+
+    const xhr = new XMLHttpRequest();
+    xhr.open("POST", "/api/demo/upload");
+    xhr.upload.onprogress = (e) => {
+      if (e.lengthComputable) setProgress(Math.round((e.loaded / e.total) * 100));
+    };
+    xhr.onload = async () => {
+      setDemoUploading(false);
+      try {
+        const body = JSON.parse(xhr.responseText);
+        if (xhr.status >= 200 && xhr.status < 300) {
+          await afterUpload(body.data);
+        } else {
+          throw new Error(body?.error?.message ?? "Upload failed");
+        }
+      } catch (err) {
+        toast.error(err instanceof Error ? err.message : "Upload failed");
+        setStep("upload");
+      }
+    };
+    xhr.onerror = () => {
+      setDemoUploading(false);
+      toast.error("Upload failed");
+      setStep("upload");
+    };
+    xhr.send(form);
+  }
+
   function reset() {
     setStep("title");
     setTitle("");
     setResumeId(null);
     setCreating(false);
+    setDemoUploading(false);
+    setProgress(0);
   }
 
   async function createResume() {
@@ -110,10 +160,15 @@ export function NewResumeDialog({
       return;
     }
     if (!resumeId) return;
-    void startUpload([file], { resumeId });
+    if (demo) {
+      demoUpload(file, resumeId);
+    } else {
+      void startUpload([file], { resumeId });
+    }
   }
 
-  const busy = isUploading || step === "parsing";
+  const uploading = isUploading || demoUploading;
+  const busy = uploading || step === "parsing";
 
   return (
     <Dialog
@@ -223,21 +278,30 @@ export function NewResumeDialog({
                   )}
                 >
                   <div className="flex size-12 items-center justify-center rounded-xl bg-secondary">
-                    {isUploading ? (
+                    {uploading ? (
                       <Loader2 className="size-6 animate-spin text-primary" />
                     ) : (
                       <UploadCloud className="size-6 text-muted-foreground" />
                     )}
                   </div>
-                  <div>
+                  <div className="w-full">
                     <p className="font-medium">
-                      {isUploading
-                        ? "Uploading…"
+                      {uploading
+                        ? `Uploading… ${demo ? `${progress}%` : ""}`.trim()
                         : "Drag & drop or click to upload"}
                     </p>
-                    <p className="mt-1 flex items-center justify-center gap-1.5 text-xs text-muted-foreground">
-                      <FileText className="size-3.5" /> PDF or DOCX · max 10MB
-                    </p>
+                    {uploading && demo ? (
+                      <div className="mx-auto mt-3 h-1.5 w-40 overflow-hidden rounded-full bg-secondary">
+                        <div
+                          className="h-full rounded-full bg-primary transition-all"
+                          style={{ width: `${progress}%` }}
+                        />
+                      </div>
+                    ) : (
+                      <p className="mt-1 flex items-center justify-center gap-1.5 text-xs text-muted-foreground">
+                        <FileText className="size-3.5" /> PDF or DOCX · max 10MB
+                      </p>
+                    )}
                   </div>
                 </button>
               )}

@@ -1,5 +1,7 @@
 import "server-only";
 import { db } from "@/server/db";
+import { isDemoMode } from "@/lib/dev-mode";
+import { demoStore } from "@/server/demo/store";
 import { analysisRepo } from "@/server/repositories/analysis.repo";
 import { resumeRepo } from "@/server/repositories/resume.repo";
 import { jdRepo } from "@/server/repositories/jd.repo";
@@ -77,7 +79,29 @@ export const analysisService = {
 
       const overall = weightedOverall(result.score.subScores);
 
-      await db.$transaction(async (tx) => {
+      if (isDemoMode()) {
+        demoStore.completeAnalysis(analysis.id, {
+          overallScore: overall,
+          subScores: result.score.subScores,
+          summary: result.score.summary,
+          modelUsed: result.usage.model,
+          tokensInput: result.usage.tokensInput,
+          tokensOutput: result.usage.tokensOutput,
+          costCents: result.usage.costCents,
+          ats: { score: result.ats.score, findings: result.ats.findings },
+          match: result.match
+            ? {
+                matchScore: result.match.matchScore,
+                matched: result.match.matched,
+                weak: result.match.weak,
+                missing: result.match.missing,
+                keywordCoverage: result.match.keywordCoverage,
+              }
+            : undefined,
+          suggestions: result.suggestions,
+        });
+      } else {
+        await db.$transaction(async (tx) => {
         await tx.analysis.update({
           where: { id: analysis.id },
           data: {
@@ -128,7 +152,8 @@ export const analysisService = {
             })),
           });
         }
-      });
+        });
+      }
 
       await usageService.record(
         user.id,

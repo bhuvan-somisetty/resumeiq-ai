@@ -12,7 +12,6 @@ import {
 import { requireUser } from "@/server/auth/current-user";
 import { resumeService } from "@/server/services/resume.service";
 import { analysisService } from "@/server/services/analysis.service";
-import { usageService } from "@/server/services/usage.service";
 import { NewResumeDialog } from "@/components/resumeiq/new-resume-dialog";
 import { ScoreRing } from "@/components/resumeiq/score-ring";
 import { StatCard } from "@/components/resumeiq/stat-card";
@@ -24,10 +23,9 @@ import { timeAgo, scoreHealthLabel } from "@/lib/utils";
 
 export default async function DashboardPage() {
   const user = await requireUser();
-  const [resumes, recent, usage] = await Promise.all([
+  const [resumes, recent] = await Promise.all([
     resumeService.list(user.id),
     analysisService.listRecent(user.id),
-    usageService.getUsage(user.id, user.plan),
   ]);
 
   const scored = recent.filter((a) => a.overallScore != null);
@@ -75,8 +73,8 @@ export default async function DashboardPage() {
         />
         <StatCard
           icon={<Zap />}
-          label={usage.unlimited ? "Analyses (Pro)" : "Analyses left"}
-          value={usage.unlimited ? recent.length : Math.max(0, usage.limit - usage.used)}
+          label="Analyses"
+          value={recent.length}
           accent="warning"
           delay={0.18}
         />

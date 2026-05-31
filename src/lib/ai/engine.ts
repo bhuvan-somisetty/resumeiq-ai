@@ -18,6 +18,8 @@ import {
 } from "@/lib/ai/schemas";
 import { logger } from "@/lib/logger";
 import { AppError } from "@/lib/errors";
+import { isDemoMode } from "@/lib/dev-mode";
+import { demoParseResume, demoFullAnalysis } from "@/lib/ai/demo-engine";
 
 export interface AiUsage {
   model: string;
@@ -45,21 +47,26 @@ async function jsonCall<T>(
   let lastErr: unknown;
 
   for (let attempt = 0; attempt < 2; attempt++) {
-    const completion = await client.chat.completions.create({
-      model,
-      temperature: 0.2,
-      response_format: { type: "json_object" },
-      messages: [
-        { role: "system", content: system },
-        {
-          role: "user",
-          content:
-            attempt === 0
-              ? user
-              : `${user}\n\nYour previous response was not valid JSON for the schema. Return ONLY valid JSON.`,
-        },
-      ],
-    });
+    let completion;
+    try {
+      completion = await client.chat.completions.create({
+        model,
+        temperature: 0.2,
+        response_format: { type: "json_object" },
+        messages: [
+          { role: "system", content: system },
+          {
+            role: "user",
+            content:
+              attempt === 0
+                ? user
+                : `${user}\n\nYour previous response was not valid JSON for the schema. Return ONLY valid JSON.`,
+          },
+        ],
+      });
+    } catch (err) {
+      throw mapOpenAiError(err);
+    }
 
     const content = completion.choices[0]?.message?.content ?? "";
     const usage: AiUsage = {
@@ -87,6 +94,44 @@ async function jsonCall<T>(
   });
 }
 
+/** Translate an OpenAI SDK error into a user-safe AppError. */
+function mapOpenAiError(err: unknown): AppError {
+  const status =
+    typeof err === "object" && err !== null && "status" in err
+      ? (err as { status?: number }).status
+      : undefined;
+  const name = err instanceof Error ? err.name : "";
+  const cause = err instanceof Error ? err.message : String(err);
+
+  if (status === 429) {
+    logger.warn("OpenAI rate limited", { cause });
+    return new AppError(
+      "RATE_LIMITED",
+      "The analysis service is busy right now. Please try again in a moment.",
+    );
+  }
+  if (status === 401 || status === 403) {
+    // Misconfiguration (bad/missing key) — don't leak details to the client.
+    logger.error("OpenAI auth failure", { status, cause });
+    return new AppError(
+      "ANALYSIS_FAILED",
+      "The analysis service is temporarily unavailable.",
+    );
+  }
+  if (name.includes("Timeout") || name.includes("Connection")) {
+    logger.warn("OpenAI timeout/connection error", { cause });
+    return new AppError(
+      "ANALYSIS_FAILED",
+      "The analysis timed out. Please try again.",
+    );
+  }
+  logger.error("OpenAI request failed", { status, cause });
+  return new AppError(
+    "ANALYSIS_FAILED",
+    "We couldn't complete the analysis. Please try again.",
+  );
+}
+
 function sumUsage(parts: AiUsage[]): AiUsage {
   return parts.reduce<AiUsage>(
     (acc, u) => ({
@@ -101,6 +146,7 @@ function sumUsage(parts: AiUsage[]): AiUsage {
 
 /** Extract structured resume data from raw text. */
 export async function aiParseResume(rawText: string) {
+  if (isDemoMode()) return demoParseResume(rawText);
   return jsonCall(
     parsedResumeSchema,
     parsePrompt.system,
@@ -131,6 +177,8 @@ export interface FullAnalysisOutput {
 export async function runFullAnalysis(
   input: FullAnalysisInput,
 ): Promise<FullAnalysisOutput> {
+  if (isDemoMode()) return demoFullAnalysis(input);
+
   const model = input.deep ? MODELS.analysis : MODELS.analysis;
 
   const [scoreRes, atsRes, matchRes] = await Promise.all([

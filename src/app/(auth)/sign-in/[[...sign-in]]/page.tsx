@@ -1,5 +1,7 @@
 import type { Metadata } from "next";
 import { SignIn } from "@clerk/nextjs";
+import { isDemoMode } from "@/lib/dev-mode";
+import { DemoAuthCard } from "@/components/auth/demo-auth-card";
 
 export const metadata: Metadata = { title: "Sign in" };
 
@@ -12,6 +14,9 @@ export default function SignInPage() {
           Sign in to continue to your dashboard
         </p>
       </div>
+      {isDemoMode() ? (
+        <DemoAuthCard mode="sign-in" />
+      ) : (
       <SignIn
         appearance={{
           elements: {
@@ -24,6 +29,7 @@ export default function SignInPage() {
           variables: { colorPrimary: "#4f46e5", borderRadius: "0.6rem" },
         }}
       />
+      )}
     </div>
   );
 }

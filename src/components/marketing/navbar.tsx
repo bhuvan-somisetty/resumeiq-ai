@@ -3,7 +3,7 @@
 import * as React from "react";
 import Link from "next/link";
 import { motion } from "framer-motion";
-import { SignedIn, SignedOut } from "@clerk/nextjs";
+import { SignedIn, SignedOut } from "@/components/auth/clerk-gate";
 import { ArrowRight } from "lucide-react";
 import { Logo } from "@/components/marketing/logo";
 import { ThemeToggle } from "@/components/theme-toggle";
@@ -58,8 +58,8 @@ export function Navbar() {
               <Link href="/sign-in">Sign in</Link>
             </Button>
             <Button size="sm" asChild>
-              <Link href="/sign-up">
-                Get started
+              <Link href="/analyze">
+                Upload resume
                 <ArrowRight className="size-3.5" />
               </Link>
             </Button>

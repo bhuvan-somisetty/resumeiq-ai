@@ -4,6 +4,9 @@ import { extractRawText } from "@/lib/parsing/extract";
 import { aiParseResume } from "@/lib/ai/engine";
 import { AppError } from "@/lib/errors";
 import { logger } from "@/lib/logger";
+import { isDemoMode } from "@/lib/dev-mode";
+import { demoStore } from "@/server/demo/store";
+import { MAX_EXTRACTED_CHARS } from "@/lib/constants";
 import type { FileType } from "@/generated/prisma";
 
 export const resumeService = {
@@ -58,11 +61,26 @@ export const resumeService = {
         parseStatus: "PROCESSING",
       });
 
-      const res = await fetch(version.fileUrl);
-      if (!res.ok) throw new AppError("PARSE_FAILED", "Could not fetch file.");
-      const buffer = await res.arrayBuffer();
+      let buffer: ArrayBuffer;
+      if (isDemoMode()) {
+        // Demo uploads keep the original bytes in memory (no UploadThing).
+        const stored = demoStore.getFile(version.fileKey);
+        if (!stored)
+          throw new AppError("PARSE_FAILED", "Uploaded file is no longer available.");
+        buffer = stored.bytes.buffer.slice(
+          stored.bytes.byteOffset,
+          stored.bytes.byteOffset + stored.bytes.byteLength,
+        ) as ArrayBuffer;
+      } else {
+        const res = await fetch(version.fileUrl);
+        if (!res.ok) throw new AppError("PARSE_FAILED", "Could not fetch file.");
+        buffer = await res.arrayBuffer();
+      }
 
-      const rawText = await extractRawText(buffer, version.fileType);
+      const rawText = (await extractRawText(buffer, version.fileType)).slice(
+        0,
+        MAX_EXTRACTED_CHARS,
+      );
       const { data: parsed } = await aiParseResume(rawText);
 
       await resumeRepo.updateVersionParse(version.id, {

@@ -39,3 +39,6 @@ yarn-error.log*
 .idea
 .vscode/*
 !.vscode/extensions.json
+
+# Local test artifact
+scripts/test-resume.pdf

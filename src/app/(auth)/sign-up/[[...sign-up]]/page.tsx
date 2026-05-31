@@ -1,5 +1,7 @@
 import type { Metadata } from "next";
 import { SignUp } from "@clerk/nextjs";
+import { isDemoMode } from "@/lib/dev-mode";
+import { DemoAuthCard } from "@/components/auth/demo-auth-card";
 
 export const metadata: Metadata = { title: "Create your account" };
 
@@ -14,18 +16,22 @@ export default function SignUpPage() {
           Get your first resume analysis free
         </p>
       </div>
-      <SignUp
-        appearance={{
-          elements: {
-            rootBox: "w-full",
-            card: "bg-transparent shadow-none p-0",
-            headerTitle: "hidden",
-            headerSubtitle: "hidden",
-            footer: "hidden",
-          },
-          variables: { colorPrimary: "#4f46e5", borderRadius: "0.6rem" },
-        }}
-      />
+      {isDemoMode() ? (
+        <DemoAuthCard mode="sign-up" />
+      ) : (
+        <SignUp
+          appearance={{
+            elements: {
+              rootBox: "w-full",
+              card: "bg-transparent shadow-none p-0",
+              headerTitle: "hidden",
+              headerSubtitle: "hidden",
+              footer: "hidden",
+            },
+            variables: { colorPrimary: "#4f46e5", borderRadius: "0.6rem" },
+          }}
+        />
+      )}
     </div>
   );
 }

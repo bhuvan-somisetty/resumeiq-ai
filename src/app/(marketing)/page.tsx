@@ -89,8 +89,8 @@ export default function LandingPage() {
                   in under two minutes.
                 </p>
                 <Button size="lg" asChild className="mt-8">
-                  <Link href="/sign-up">
-                    Get started for free
+                  <Link href="/analyze">
+                    Upload your resume — free
                     <ArrowRight className="size-4" />
                   </Link>
                 </Button>

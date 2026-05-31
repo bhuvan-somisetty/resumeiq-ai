@@ -4,7 +4,19 @@ export const APP_NAME = "ResumeIQ AI";
 export const APP_DESCRIPTION =
   "AI-powered resume analysis: instant scoring, ATS checks, and job-matched rewrites.";
 
-export const MAX_FILE_BYTES = 10 * 1024 * 1024; // 10 MB
+export const MAX_FILE_BYTES = 10 * 1024 * 1024; // 10 MB (authenticated, via UploadThing)
+
+/**
+ * Guest uploads stream *through* a serverless function, so they must stay under
+ * the platform request-body cap (Vercel ≈ 4.5 MB). 4 MB leaves headroom and
+ * still covers virtually every real resume.
+ */
+export const MAX_GUEST_FILE_BYTES = 4 * 1024 * 1024; // 4 MB
+
+/** Upper bound on extracted resume text sent to the model (cost/abuse guard). */
+export const MAX_EXTRACTED_CHARS = 60_000;
+/** Upper bound on a pasted job description (matches the API validator). */
+export const MAX_JD_CHARS = 20_000;
 export const ACCEPTED_FILE_TYPES = {
   "application/pdf": [".pdf"],
   "application/vnd.openxmlformats-officedocument.wordprocessingml.document": [
@@ -30,11 +42,11 @@ export const PLANS: Record<PlanId, PlanConfig> = {
     id: "FREE",
     name: "Free",
     priceMonthly: 0,
-    analysesPerMonth: 3,
-    savedResumes: 1,
-    jdMatch: false,
-    exports: false,
-    deepMode: false,
+    analysesPerMonth: -1,
+    savedResumes: -1,
+    jdMatch: true,
+    exports: true,
+    deepMode: true,
   },
   PRO: {
     id: "PRO",

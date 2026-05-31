@@ -1,7 +1,8 @@
 import "server-only";
 import { db } from "@/server/db";
+import { isDemoMode } from "@/lib/dev-mode";
+import { demoStore } from "@/server/demo/store";
 import { PLANS } from "@/lib/constants";
-import { AppError } from "@/lib/errors";
 import type { Plan, UsageType } from "@/generated/prisma";
 
 function startOfMonth(): Date {
@@ -12,6 +13,7 @@ function startOfMonth(): Date {
 export const usageService = {
   /** Analyses used by a user in the current calendar month. */
   async monthlyAnalysisCount(userId: string): Promise<number> {
+    if (isDemoMode()) return demoStore.monthlyAnalysisCount(userId);
     return db.usageRecord.count({
       where: {
         userId,
@@ -29,16 +31,9 @@ export const usageService = {
     return { used, limit, unlimited: limit === -1, resetsAt };
   },
 
-  /** Enforce the monthly quota before a metered action. Throws if exceeded. */
-  async assertCanAnalyze(userId: string, plan: Plan): Promise<void> {
-    const { used, limit, resetsAt } = await this.getUsage(userId, plan);
-    if (limit !== -1 && used >= limit) {
-      throw new AppError(
-        "QUOTA_EXCEEDED",
-        `You've used all ${limit} analyses on the ${PLANS[plan].name} plan this month.`,
-        { limit, used, resetsAt, upgradeUrl: "/pricing" },
-      );
-    }
+  /** Quotas are disabled — analyses are unlimited for everyone. */
+  async assertCanAnalyze(_userId: string, _plan: Plan): Promise<void> {
+    return;
   },
 
   record(
@@ -47,6 +42,10 @@ export const usageService = {
     analysisId?: string,
     costCents?: number,
   ) {
+    if (isDemoMode())
+      return Promise.resolve(
+        demoStore.recordUsage({ userId, type, analysisId, costCents }),
+      );
     return db.usageRecord.create({
       data: { userId, type, analysisId, costCents },
     });

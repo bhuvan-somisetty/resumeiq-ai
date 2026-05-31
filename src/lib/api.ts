@@ -19,9 +19,19 @@ export function accepted<T>(data: T) {
 /** Normalize any thrown error into the standard error envelope. */
 export function handleError(error: unknown) {
   if (isAppError(error)) {
+    // Server-fault AppErrors (5xx) are logged at error; client faults at warn.
+    const level = error.status >= 500 ? "error" : "warn";
+    logger[level]("Handled API error", {
+      code: error.code,
+      status: error.status,
+      message: error.message,
+    });
     return NextResponse.json(error.toJSON(), { status: error.status });
   }
   if (error instanceof ZodError) {
+    logger.warn("Request validation failed", {
+      issues: error.flatten().fieldErrors,
+    });
     return NextResponse.json(
       {
         error: {
@@ -35,6 +45,7 @@ export function handleError(error: unknown) {
   }
   logger.error("Unhandled API error", {
     error: error instanceof Error ? error.message : String(error),
+    stack: error instanceof Error ? error.stack : undefined,
   });
   return NextResponse.json(
     {

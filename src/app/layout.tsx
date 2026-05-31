@@ -7,7 +7,18 @@ import { Toaster } from "sonner";
 import { ThemeProvider } from "@/components/providers/theme-provider";
 import { ourFileRouter } from "@/app/api/uploadthing/core";
 import { APP_NAME, APP_DESCRIPTION } from "@/lib/constants";
+import { isClerkConfigured } from "@/lib/auth/clerk";
 import "./globals.css";
+
+/**
+ * Only mount Clerk when real credentials are configured. With local-dev
+ * placeholder keys, ClerkProvider would load its script from the dummy domain
+ * (clerk.example.com) and redirect the browser away from public routes.
+ */
+function AuthProvider({ children }: { children: React.ReactNode }) {
+  if (!isClerkConfigured()) return <>{children}</>;
+  return <ClerkProvider>{children}</ClerkProvider>;
+}
 
 const inter = Inter({
   subsets: ["latin"],
@@ -48,7 +59,7 @@ export default function RootLayout({
   children,
 }: Readonly<{ children: React.ReactNode }>) {
   return (
-    <ClerkProvider>
+    <AuthProvider>
       <html lang="en" suppressHydrationWarning>
         <body
           className={`${inter.variable} ${mono.variable} font-sans antialiased`}
@@ -70,6 +81,6 @@ export default function RootLayout({
           </ThemeProvider>
         </body>
       </html>
-    </ClerkProvider>
+    </AuthProvider>
   );
 }
