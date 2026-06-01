@@ -1,22 +1,21 @@
 import "server-only";
-import OpenAI from "openai";
+import { GoogleGenAI } from "@google/genai";
 
 /**
- * Lazily-instantiated OpenAI client. Lazy init keeps `next build` from needing a
- * real API key at module-eval time.
+ * Lazily-instantiated Google Gemini client. Lazy init keeps `next build` from
+ * needing a real API key at module-eval time. Uses the free-tier Gemini API
+ * (Google AI Studio key), so no billing is required.
  */
-let _client: OpenAI | null = null;
+let _client: GoogleGenAI | null = null;
 
-export function getOpenAI(): OpenAI {
+export function getGemini(): GoogleGenAI {
   if (!_client) {
-    const apiKey = process.env.OPENAI_API_KEY;
-    if (!apiKey) throw new Error("OPENAI_API_KEY is not set");
-    _client = new OpenAI({
+    const apiKey = process.env.GEMINI_API_KEY;
+    if (!apiKey) throw new Error("GEMINI_API_KEY is not set");
+    _client = new GoogleGenAI({
       apiKey,
-      // Bound per-request latency so a hung call can't exhaust the function
-      // timeout; retry transient failures (429 / 5xx / network) with backoff.
-      timeout: 30_000,
-      maxRetries: 2,
+      // Bound per-request latency so a hung call can't exhaust the function timeout.
+      httpOptions: { timeout: 30_000 },
     });
   }
   return _client;

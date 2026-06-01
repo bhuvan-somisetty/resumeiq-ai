@@ -2,7 +2,7 @@
 
 Step-by-step instructions to take ResumeIQ AI from this repository to a live
 production URL on **Vercel**, backed by **Neon** (PostgreSQL), **Clerk** (auth),
-**OpenAI** (analysis), and **UploadThing** (file storage for signed-in users).
+**Google Gemini** (analysis, free tier), and **UploadThing** (file storage for signed-in users).
 
 > The app runs in a self-contained **demo mode** when Clerk keys are placeholders.
 > Setting **real Clerk keys** automatically switches every subsystem (auth, DB,
@@ -17,7 +17,7 @@ production URL on **Vercel**, backed by **Neon** (PostgreSQL), **Clerk** (auth),
 | **Vercel** | Hosting / build / serverless | Hobby works; **Pro** recommended (longer function timeouts) | https://vercel.com/signup |
 | **Neon** | Production PostgreSQL (pgvector) | Free tier is fine to launch | https://neon.tech |
 | **Clerk** | Authentication (sign in / sign up / sessions) | Free tier is fine | https://dashboard.clerk.com |
-| **OpenAI** | Resume parsing, scoring, suggestions | Pay-as-you-go (billing required) | https://platform.openai.com |
+| **Google Gemini** | Resume parsing, scoring, suggestions | **Free tier (no billing)** | https://aistudio.google.com/apikey |
 | **UploadThing** | Stores uploaded resumes for **signed-in** users | Free tier is fine | https://uploadthing.com |
 | **GitHub** | Source Vercel deploys from | Free | https://github.com |
 
@@ -41,16 +41,16 @@ Collect these before deploying. Exact "where to paste" is in **Step 6**.
 | `NEXT_PUBLIC_CLERK_SIGN_UP_URL` | `/sign-up` | constant |
 | `NEXT_PUBLIC_CLERK_SIGN_IN_FALLBACK_REDIRECT_URL` | `/app` | constant |
 | `NEXT_PUBLIC_CLERK_SIGN_UP_FALLBACK_REDIRECT_URL` | `/app` | constant |
-| `OPENAI_API_KEY` | `sk-…` | OpenAI → API keys |
-| `OPENAI_ANALYSIS_MODEL` | `gpt-4o` | constant — **optional** (defaults to `gpt-4o`) |
-| `OPENAI_FAST_MODEL` | `gpt-4o-mini` | constant — **optional** |
+| `GEMINI_API_KEY` | `AIza…` | Google AI Studio → **Get API key** (free) |
+| `GEMINI_ANALYSIS_MODEL` | `gemini-2.0-flash` | constant — **optional** (default) |
+| `GEMINI_FAST_MODEL` | `gemini-2.0-flash` | constant — **optional** |
 | `OPENAI_EMBEDDING_MODEL` | `text-embedding-3-small` | constant — **optional** |
 | `UPLOADTHING_TOKEN` | long token | UploadThing → API Keys (V7 token) |
 | `NEXT_PUBLIC_APP_URL` | `https://your-app.vercel.app` | your Vercel URL (set after first deploy) |
 | `INNGEST_EVENT_KEY` / `INNGEST_SIGNING_KEY` | — | **not required** for MVP (analysis runs synchronously) |
 
 Minimum set to be fully functional: **DATABASE_URL, DIRECT_URL, the 2 Clerk keys,
-the 4 Clerk URL constants, OPENAI_API_KEY, UPLOADTHING_TOKEN, NEXT_PUBLIC_APP_URL.**
+the 4 Clerk URL constants, GEMINI_API_KEY, UPLOADTHING_TOKEN, NEXT_PUBLIC_APP_URL.**
 
 ---
 
@@ -93,10 +93,11 @@ git push origin main
 
 ---
 
-## 5. Create OpenAI + UploadThing keys
+## 5. Create Gemini + UploadThing keys
 
-- **OpenAI**: https://platform.openai.com/api-keys → **Create new secret key** → `OPENAI_API_KEY`.
-  Make sure billing is set up (add a payment method / credits), or analysis calls will 401/429.
+- **Google Gemini**: https://aistudio.google.com/apikey → sign in with Google →
+  **Get API key / Create API key** → copy it (`AIza…`) → `GEMINI_API_KEY`.
+  No billing or payment method required — the free tier covers analysis.
 - **UploadThing**: https://uploadthing.com/dashboard → create an app → **API Keys** →
   copy the token → `UPLOADTHING_TOKEN`.
 
@@ -110,12 +111,12 @@ git push origin main
 3. Open **Settings → Environment Variables** and add **every** variable from Step 1
    to the **Production** environment (and Preview if you want preview deploys to work).
    Paste each name and value exactly. For the constants, paste the literal values
-   (`/sign-in`, `/app`, `gpt-4o`, …).
+   (`/sign-in`, `/app`, `gemini-2.0-flash`, …).
 4. For `NEXT_PUBLIC_APP_URL`, put a placeholder for now (e.g. `https://example.vercel.app`);
    you'll correct it in Step 9.
 5. Click **Deploy**.
 
-> ⚠️ Set the database + Clerk + OpenAI vars **before** the first deploy. If they're
+> ⚠️ Set the database + Clerk + Gemini vars **before** the first deploy. If they're
 > missing, the app falls back to demo mode or fails at runtime.
 
 ---
@@ -193,16 +194,15 @@ vercel --prod                    # deploy
 1. **Placeholder keys = demo mode in prod.** If Clerk keys aren't real, the live
    site silently runs in-memory demo mode (no real auth/DB). Double-check
    `NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY` is `pk_live_…` in Vercel.
-2. **Unauthenticated, unmetered guest analysis.** `/api/guest/analyze` runs the
-   OpenAI pipeline with **no login and no rate limit** — each call costs money and
-   is abusable. Before heavy promotion, add rate limiting / a captcha / per-IP caps.
-   (All quotas were removed per product decision, so there is no built-in cap.)
-3. **Function timeout vs. model latency.** Analysis makes several OpenAI calls;
-   `maxDuration` is 60s. On Vercel **Hobby**, 60s is the hard cap — a slow `gpt-4o`
-   run can time out. Mitigate with Vercel **Pro** (up to 300s) or set
-   `OPENAI_ANALYSIS_MODEL=gpt-4o-mini`.
-4. **OpenAI billing.** No credits/billing → 401/429 and every analysis fails. Set a
-   usage limit to avoid surprise bills.
+2. **Unauthenticated guest analysis.** `/api/guest/analyze` runs the Gemini
+   pipeline with **no login** (per-IP rate limited: 3/min, 30/day). Free-tier
+   Gemini has its own per-minute quota, so heavy concurrent traffic may transiently
+   return "service busy" (429) — acceptable for launch; upgrade the Gemini tier if needed.
+3. **Function timeout vs. model latency.** Analysis makes several Gemini calls;
+   `maxDuration` is 60s. On Vercel **Hobby**, 60s is the hard cap. `gemini-2.0-flash`
+   is fast, so this is rarely an issue.
+4. **Gemini free-tier limits.** No billing needed, but the free tier caps requests
+   per minute/day. A 429 surfaces to users as "analysis service is busy."
 5. **Neon connection limits.** Use the **pooled** URL for `DATABASE_URL` (already
    instructed). Using the direct URL at runtime can exhaust connections under load.
 6. **pgvector dependency.** The schema declares the `vector` extension. Neon enables

@@ -1,6 +1,6 @@
 import "server-only";
 import type { z } from "zod";
-import { getOpenAI } from "@/lib/ai/client";
+import { getGemini } from "@/lib/ai/client";
 import { MODELS, estimateCostCents } from "@/lib/ai/models";
 import {
   parsePrompt,
@@ -34,7 +34,7 @@ interface CallResult<T> {
 }
 
 /**
- * Core JSON completion helper. Calls OpenAI in JSON mode, validates the response
+ * Core JSON completion helper. Calls Gemini in JSON mode, validates the response
  * against a Zod schema, and retries once on malformed output before failing.
  */
 async function jsonCall<T>(
@@ -43,41 +43,36 @@ async function jsonCall<T>(
   user: string,
   model: string = MODELS.analysis,
 ): Promise<CallResult<T>> {
-  const client = getOpenAI();
+  const client = getGemini();
   let lastErr: unknown;
 
   for (let attempt = 0; attempt < 2; attempt++) {
-    let completion;
+    let response;
     try {
-      completion = await client.chat.completions.create({
+      response = await client.models.generateContent({
         model,
-        temperature: 0.2,
-        response_format: { type: "json_object" },
-        messages: [
-          { role: "system", content: system },
-          {
-            role: "user",
-            content:
-              attempt === 0
-                ? user
-                : `${user}\n\nYour previous response was not valid JSON for the schema. Return ONLY valid JSON.`,
-          },
-        ],
+        contents:
+          attempt === 0
+            ? user
+            : `${user}\n\nYour previous response was not valid JSON for the schema. Return ONLY valid JSON.`,
+        config: {
+          systemInstruction: system,
+          temperature: 0.2,
+          responseMimeType: "application/json",
+        },
       });
     } catch (err) {
-      throw mapOpenAiError(err);
+      throw mapGeminiError(err);
     }
 
-    const content = completion.choices[0]?.message?.content ?? "";
+    const content = response.text ?? "";
+    const inTok = response.usageMetadata?.promptTokenCount ?? 0;
+    const outTok = response.usageMetadata?.candidatesTokenCount ?? 0;
     const usage: AiUsage = {
       model,
-      tokensInput: completion.usage?.prompt_tokens ?? 0,
-      tokensOutput: completion.usage?.completion_tokens ?? 0,
-      costCents: estimateCostCents(
-        model,
-        completion.usage?.prompt_tokens ?? 0,
-        completion.usage?.completion_tokens ?? 0,
-      ),
+      tokensInput: inTok,
+      tokensOutput: outTok,
+      costCents: estimateCostCents(model, inTok, outTok),
     };
 
     try {
@@ -94,8 +89,8 @@ async function jsonCall<T>(
   });
 }
 
-/** Translate an OpenAI SDK error into a user-safe AppError. */
-function mapOpenAiError(err: unknown): AppError {
+/** Translate a Gemini SDK error into a user-safe AppError. */
+function mapGeminiError(err: unknown): AppError {
   const status =
     typeof err === "object" && err !== null && "status" in err
       ? (err as { status?: number }).status
@@ -103,29 +98,35 @@ function mapOpenAiError(err: unknown): AppError {
   const name = err instanceof Error ? err.name : "";
   const cause = err instanceof Error ? err.message : String(err);
 
-  if (status === 429) {
-    logger.warn("OpenAI rate limited", { cause });
+  // 429 = free-tier rate/quota limit.
+  if (status === 429 || /quota|rate limit|RESOURCE_EXHAUSTED/i.test(cause)) {
+    logger.warn("Gemini rate/quota limited", { cause });
     return new AppError(
       "RATE_LIMITED",
       "The analysis service is busy right now. Please try again in a moment.",
     );
   }
-  if (status === 401 || status === 403) {
-    // Misconfiguration (bad/missing key) — don't leak details to the client.
-    logger.error("OpenAI auth failure", { status, cause });
+  // 400/401/403 = bad/missing key or permission — don't leak details.
+  if (
+    status === 400 ||
+    status === 401 ||
+    status === 403 ||
+    /API key not valid|PERMISSION_DENIED/i.test(cause)
+  ) {
+    logger.error("Gemini auth/config failure", { status, cause });
     return new AppError(
       "ANALYSIS_FAILED",
       "The analysis service is temporarily unavailable.",
     );
   }
-  if (name.includes("Timeout") || name.includes("Connection")) {
-    logger.warn("OpenAI timeout/connection error", { cause });
+  if (name.includes("Timeout") || /timeout|ETIMEDOUT|ECONN/i.test(cause)) {
+    logger.warn("Gemini timeout/connection error", { cause });
     return new AppError(
       "ANALYSIS_FAILED",
       "The analysis timed out. Please try again.",
     );
   }
-  logger.error("OpenAI request failed", { status, cause });
+  logger.error("Gemini request failed", { status, cause });
   return new AppError(
     "ANALYSIS_FAILED",
     "We couldn't complete the analysis. Please try again.",

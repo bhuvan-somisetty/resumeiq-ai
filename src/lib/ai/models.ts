@@ -1,29 +1,23 @@
 /**
- * Model routing. Default to the fast/cost-efficient model; route deep reasoning
- * (JD gap analysis, Pro "deep mode") to the stronger model.
+ * Model routing for Google Gemini (free tier). `gemini-2.0-flash` is fast, JSON-
+ * capable, and free; override per-tier via env if needed.
  */
 export const MODELS = {
-  analysis: process.env.OPENAI_ANALYSIS_MODEL ?? "gpt-4o",
-  fast: process.env.OPENAI_FAST_MODEL ?? "gpt-4o-mini",
-  embedding: process.env.OPENAI_EMBEDDING_MODEL ?? "text-embedding-3-small",
+  analysis: process.env.GEMINI_ANALYSIS_MODEL ?? "gemini-2.0-flash",
+  fast: process.env.GEMINI_FAST_MODEL ?? "gemini-2.0-flash",
+  embedding: process.env.GEMINI_EMBEDDING_MODEL ?? "text-embedding-004",
 } as const;
 
-export const EMBEDDING_DIMENSIONS = 1536;
+export const EMBEDDING_DIMENSIONS = 768; // Gemini text-embedding-004
 
-/** Rough cost table (USD per 1M tokens) for unit-economics logging. */
-const COST_PER_MTOK: Record<string, { input: number; output: number }> = {
-  "gpt-4o": { input: 2.5, output: 10 },
-  "gpt-4o-mini": { input: 0.15, output: 0.6 },
-};
-
+/**
+ * Cost tracking. The Gemini free tier has no usage cost, so this reports 0;
+ * kept for the usage-record plumbing and easy swap to paid tiers later.
+ */
 export function estimateCostCents(
-  model: string,
-  inputTokens: number,
-  outputTokens: number,
+  _model: string,
+  _inputTokens: number,
+  _outputTokens: number,
 ): number {
-  const rate = COST_PER_MTOK[model] ?? COST_PER_MTOK["gpt-4o"]!;
-  const dollars =
-    (inputTokens / 1_000_000) * rate.input +
-    (outputTokens / 1_000_000) * rate.output;
-  return Math.round(dollars * 100);
+  return 0;
 }
