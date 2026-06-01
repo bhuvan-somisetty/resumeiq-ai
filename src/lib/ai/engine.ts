@@ -2,20 +2,16 @@ import "server-only";
 import type { z } from "zod";
 import { getGemini } from "@/lib/ai/client";
 import { MODELS, estimateCostCents } from "@/lib/ai/models";
-import {
-  parsePrompt,
-  scorePrompt,
-  atsPrompt,
-  matchPrompt,
-  suggestPrompt,
-} from "@/lib/ai/prompts";
+import { parsePrompt, combinedAnalysisPrompt } from "@/lib/ai/prompts";
 import {
   parsedResumeSchema,
   resumeScoreResultSchema,
   atsReportResultSchema,
   matchResultSchema,
   suggestionsResultSchema,
+  combinedAnalysisSchema,
 } from "@/lib/ai/schemas";
+import { weightedOverall } from "@/lib/ai/rubrics/score-v1";
 import { logger } from "@/lib/logger";
 import { AppError } from "@/lib/errors";
 import { isDemoMode } from "@/lib/dev-mode";
@@ -91,33 +87,49 @@ async function jsonCall<T>(
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
+function statusOf(err: unknown): number | undefined {
+  return typeof err === "object" && err !== null && "status" in err
+    ? (err as { status?: number }).status
+    : undefined;
+}
+
 function is429(err: unknown): boolean {
-  const status =
-    typeof err === "object" && err !== null && "status" in err
-      ? (err as { status?: number }).status
-      : undefined;
   const msg = err instanceof Error ? err.message : String(err);
-  return status === 429 || /RESOURCE_EXHAUSTED|rate limit|quota|too many requests/i.test(msg);
+  return (
+    statusOf(err) === 429 ||
+    /RESOURCE_EXHAUSTED|rate limit|quota|too many requests/i.test(msg)
+  );
+}
+
+function is503(err: unknown): boolean {
+  const msg = err instanceof Error ? err.message : String(err);
+  return (
+    statusOf(err) === 503 || /503|UNAVAILABLE|overloaded/i.test(msg)
+  );
 }
 
 /**
- * Call Gemini, retrying transient 429s (free-tier per-minute limits) with
- * backoff. The SDK does not auto-retry. Backoff stays well under the function
- * timeout so a hard quota still fails fast.
+ * Call Gemini, retrying only *temporary* 503 (UNAVAILABLE / model overloaded)
+ * errors up to 3 times with exponential backoff. The SDK does not auto-retry.
+ * Quota 429s are NOT retried — a daily cap won't clear in seconds, so we fail
+ * fast to a clear "quota reached" message.
  */
 async function generateWithRetry(
   client: ReturnType<typeof getGemini>,
   model: string,
   params: Parameters<ReturnType<typeof getGemini>["models"]["generateContent"]>[0],
 ) {
-  const backoffs = [1500, 4000];
-  for (let i = 0; ; i++) {
+  const backoffs = [1000, 2000, 4000]; // up to 3 retries
+  for (let attempt = 0; ; attempt++) {
     try {
       return await client.models.generateContent(params);
     } catch (err) {
-      if (is429(err) && i < backoffs.length) {
-        logger.warn("Gemini 429 — backing off", { attempt: i + 1, model });
-        await sleep(backoffs[i]!);
+      if (is503(err) && attempt < backoffs.length) {
+        logger.warn("Gemini 503 (unavailable) — retrying", {
+          attempt: attempt + 1,
+          model,
+        });
+        await sleep(backoffs[attempt]!);
         continue;
       }
       throw err;
@@ -127,19 +139,28 @@ async function generateWithRetry(
 
 /** Translate a Gemini SDK error into a user-safe AppError. */
 function mapGeminiError(err: unknown): AppError {
-  const status =
-    typeof err === "object" && err !== null && "status" in err
-      ? (err as { status?: number }).status
-      : undefined;
+  const status = statusOf(err);
   const name = err instanceof Error ? err.name : "";
   const cause = err instanceof Error ? err.message : String(err);
 
-  // 429 = free-tier rate/quota limit.
-  if (status === 429 || /quota|rate limit|RESOURCE_EXHAUSTED/i.test(cause)) {
-    logger.warn("Gemini rate/quota limited", { cause });
+  // 429 / RESOURCE_EXHAUSTED = free-tier quota reached. Log the exact Gemini
+  // error (full message, not truncated) for debugging.
+  if (is429(err)) {
+    logger.warn("Gemini quota exhausted (RESOURCE_EXHAUSTED / 429)", {
+      status,
+      geminiError: cause,
+    });
     return new AppError(
       "RATE_LIMITED",
-      "The analysis service is busy right now. Please try again in a moment.",
+      "Today's free AI quota has been reached. Please try again later.",
+    );
+  }
+  // 503 after retries — temporary unavailability.
+  if (is503(err)) {
+    logger.warn("Gemini unavailable (503) after retries", { geminiError: cause });
+    return new AppError(
+      "ANALYSIS_FAILED",
+      "The analysis service is briefly unavailable. Please try again.",
     );
   }
   // 400/401/403 = bad/missing key or permission — don't leak details.
@@ -149,35 +170,23 @@ function mapGeminiError(err: unknown): AppError {
     status === 403 ||
     /API key not valid|PERMISSION_DENIED/i.test(cause)
   ) {
-    logger.error("Gemini auth/config failure", { status, cause });
+    logger.error("Gemini auth/config failure", { status, geminiError: cause });
     return new AppError(
       "ANALYSIS_FAILED",
       "The analysis service is temporarily unavailable.",
     );
   }
   if (name.includes("Timeout") || /timeout|ETIMEDOUT|ECONN/i.test(cause)) {
-    logger.warn("Gemini timeout/connection error", { cause });
+    logger.warn("Gemini timeout/connection error", { geminiError: cause });
     return new AppError(
       "ANALYSIS_FAILED",
       "The analysis timed out. Please try again.",
     );
   }
-  logger.error("Gemini request failed", { status, cause });
+  logger.error("Gemini request failed", { status, geminiError: cause });
   return new AppError(
     "ANALYSIS_FAILED",
     "We couldn't complete the analysis. Please try again.",
-  );
-}
-
-function sumUsage(parts: AiUsage[]): AiUsage {
-  return parts.reduce<AiUsage>(
-    (acc, u) => ({
-      model: u.model,
-      tokensInput: acc.tokensInput + u.tokensInput,
-      tokensOutput: acc.tokensOutput + u.tokensOutput,
-      costCents: acc.costCents + u.costCents,
-    }),
-    { model: MODELS.analysis, tokensInput: 0, tokensOutput: 0, costCents: 0 },
   );
 }
 
@@ -194,7 +203,8 @@ export async function aiParseResume(rawText: string) {
 
 export interface FullAnalysisInput {
   rawText: string;
-  parsedJson: string;
+  /** Optional structured resume JSON (unused by the single-call path). */
+  parsedJson?: string;
   jdText?: string;
   deep?: boolean;
 }
@@ -208,58 +218,32 @@ export interface FullAnalysisOutput {
 }
 
 /**
- * Run the full analysis pipeline (score → ATS → optional JD match → suggestions).
- * Steps run concurrently where independent to minimize latency.
+ * Run the full analysis in a SINGLE Gemini call (score + ATS + suggestions +
+ * optional JD match) straight from raw resume text. This replaces the previous
+ * 4-call pipeline, cutting free-tier quota usage ~4x while returning the same
+ * shape. The overall score is computed deterministically from the sub-scores.
  */
 export async function runFullAnalysis(
   input: FullAnalysisInput,
 ): Promise<FullAnalysisOutput> {
   if (isDemoMode()) return demoFullAnalysis(input);
 
-  const model = input.deep ? MODELS.analysis : MODELS.analysis;
-
-  // Sequential (not parallel) to avoid bursting the Gemini free-tier per-minute
-  // request limit, which returns 429s when several calls fire at once.
-  const scoreRes = await jsonCall(
-    resumeScoreResultSchema,
-    scorePrompt.system,
-    scorePrompt.user(input.parsedJson),
-    model,
+  const { data, usage } = await jsonCall(
+    combinedAnalysisSchema,
+    combinedAnalysisPrompt.system,
+    combinedAnalysisPrompt.user(input.rawText, input.jdText),
+    MODELS.analysis,
   );
-  const atsRes = await jsonCall(
-    atsReportResultSchema,
-    atsPrompt.system,
-    atsPrompt.user(input.rawText, input.parsedJson),
-    MODELS.fast,
-  );
-  const matchRes = input.jdText
-    ? await jsonCall(
-        matchResultSchema,
-        matchPrompt.system,
-        matchPrompt.user(input.parsedJson, input.jdText),
-        model,
-      )
-    : null;
-
-  const context = input.jdText
-    ? `JOB DESCRIPTION (tailor suggestions to it):\n"""\n${input.jdText.slice(0, 6000)}\n"""`
-    : "Focus on general resume quality and impact.";
-
-  const suggestRes = await jsonCall(
-    suggestionsResultSchema,
-    suggestPrompt.system,
-    suggestPrompt.user(input.parsedJson, context),
-    model,
-  );
-
-  const usageParts = [scoreRes.usage, atsRes.usage, suggestRes.usage];
-  if (matchRes) usageParts.push(matchRes.usage);
 
   return {
-    score: scoreRes.data,
-    ats: atsRes.data,
-    match: matchRes?.data,
-    suggestions: suggestRes.data.suggestions,
-    usage: sumUsage(usageParts),
+    score: {
+      overallScore: weightedOverall(data.subScores),
+      subScores: data.subScores,
+      summary: data.summary,
+    },
+    ats: data.ats,
+    match: data.match ?? undefined,
+    suggestions: data.suggestions,
+    usage,
   };
 }

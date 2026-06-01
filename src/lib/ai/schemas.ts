@@ -104,6 +104,19 @@ export const suggestionsResultSchema = z.object({
   suggestions: z.array(suggestionSchema),
 });
 
+/**
+ * Combined single-call analysis output (score + ATS + suggestions + optional JD
+ * match) — lets one Gemini request replace the four-call pipeline, cutting
+ * free-tier quota usage ~4x while keeping the same persisted/returned shape.
+ */
+export const combinedAnalysisSchema = z.object({
+  subScores: subScoresSchema,
+  summary: z.string().min(1),
+  ats: atsReportResultSchema,
+  suggestions: z.array(suggestionSchema),
+  match: matchResultSchema.nullable().optional(),
+});
+
 export type ParsedResumeResult = z.infer<typeof parsedResumeSchema>;
 export type ResumeScoreResult = z.infer<typeof resumeScoreResultSchema>;
 export type AtsReportResult = z.infer<typeof atsReportResultSchema>;

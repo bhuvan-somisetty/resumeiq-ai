@@ -84,6 +84,38 @@ ${jdText.slice(0, 8000)}
 """`,
 };
 
+/**
+ * One-shot prompt: score + ATS audit + suggestions (+ optional JD match) in a
+ * single Gemini call, straight from raw resume text (no separate parse step).
+ */
+export const combinedAnalysisPrompt = {
+  system: `${GUARDRAILS}
+You score, ATS-audit, and improve a resume in a single pass.
+Sub-scores are integers 0-100. Rubric dimensions:
+${scoreRubricV1.describe()}`,
+  user: (rawText: string, jdText?: string) => `Analyze the resume and return ONE JSON object with this exact shape:
+{"subScores":{"impact":int,"clarity":int,"relevance":int,"ats":int,"completeness":int},
+"summary":string,
+"ats":{"score":int,"findings":[{"id":string,"severity":"pass"|"warn"|"fail","category":"format"|"contact"|"fonts"|"structure"|"parse","message":string,"fix?":string}]},
+"suggestions":[{"category":"IMPACT"|"CLARITY"|"KEYWORDS"|"ATS"|"STRUCTURE"|"CONTENT_GAP","priority":"HIGH"|"MEDIUM"|"LOW","section?":string,"title":string,"rationale":string,"before?":string,"after?":string}],
+"match":${jdText ? `{"matchScore":int,"matched":string[],"weak":string[],"missing":string[],"keywordCoverage":{"found":int,"missing":int,"density":number}}` : "null"}}
+
+Guidance:
+- summary: 1-2 sentences of the most important, actionable feedback.
+- ats: 4-8 findings (parseable contact info, standard headings, no tables/columns/images, fonts, length). "score" is 0-100.
+- suggestions: 4-8, HIGH priority first; for bullet rewrites include "before" (verbatim from the resume) and "after" (improved, quantified where possible).
+${
+  jdText
+    ? `- match: gap analysis vs the JOB DESCRIPTION. matched=clearly demonstrated, weak=partial/implied, missing=required in JD but absent, density=fraction 0..1 of JD keywords present.`
+    : `- match: must be null (no job description was provided).`
+}
+
+RESUME TEXT:
+"""
+${rawText.slice(0, 12000)}
+"""${jdText ? `\n\nJOB DESCRIPTION:\n"""\n${jdText.slice(0, 8000)}\n"""` : ""}`,
+};
+
 export const suggestPrompt = {
   system: `${GUARDRAILS}
 You produce prioritized, rewrite-ready resume improvements. Prefer concrete

@@ -1,6 +1,6 @@
 import type { NextRequest } from "next/server";
 import { extractRawText } from "@/lib/parsing/extract";
-import { aiParseResume, runFullAnalysis } from "@/lib/ai/engine";
+import { runFullAnalysis } from "@/lib/ai/engine";
 import { weightedOverall } from "@/lib/ai/rubrics/score-v1";
 import { detectFileType } from "@/lib/parsing/file-type";
 import {
@@ -84,16 +84,14 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    // 5) Extract + bound the text before sending to the model.
+    // 5) Extract + bound the text, then run the analysis in a single Gemini call.
     const rawText = (await extractRawText(buffer, fileType)).slice(
       0,
       MAX_EXTRACTED_CHARS,
     );
-    const { data: parsed } = await aiParseResume(rawText);
 
     const result = await runFullAnalysis({
       rawText,
-      parsedJson: JSON.stringify(parsed),
       jdText: jdText.length >= 50 ? jdText : undefined,
     });
 

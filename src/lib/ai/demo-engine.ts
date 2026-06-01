@@ -284,7 +284,7 @@ function buildSuggestions(
 
 /** Full deterministic analysis used in demo mode. */
 export function demoFullAnalysis(input: FullAnalysisInput): FullAnalysisOutput {
-  const score = buildScore(input.rawText, input.parsedJson);
+  const score = buildScore(input.rawText, input.parsedJson ?? "");
   const ats = buildAts(input.rawText);
   const match = input.jdText ? buildMatch(input.rawText, input.jdText) : undefined;
   const suggestions = buildSuggestions(score, !!input.jdText);
