@@ -49,7 +49,7 @@ async function jsonCall<T>(
   for (let attempt = 0; attempt < 2; attempt++) {
     let response;
     try {
-      response = await client.models.generateContent({
+      response = await generateWithRetry(client, model, {
         model,
         contents:
           attempt === 0
@@ -87,6 +87,42 @@ async function jsonCall<T>(
   throw new AppError("ANALYSIS_FAILED", "The AI returned an invalid response.", {
     cause: lastErr instanceof Error ? lastErr.message : String(lastErr),
   });
+}
+
+const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+
+function is429(err: unknown): boolean {
+  const status =
+    typeof err === "object" && err !== null && "status" in err
+      ? (err as { status?: number }).status
+      : undefined;
+  const msg = err instanceof Error ? err.message : String(err);
+  return status === 429 || /RESOURCE_EXHAUSTED|rate limit|quota|too many requests/i.test(msg);
+}
+
+/**
+ * Call Gemini, retrying transient 429s (free-tier per-minute limits) with
+ * backoff. The SDK does not auto-retry. Backoff stays well under the function
+ * timeout so a hard quota still fails fast.
+ */
+async function generateWithRetry(
+  client: ReturnType<typeof getGemini>,
+  model: string,
+  params: Parameters<ReturnType<typeof getGemini>["models"]["generateContent"]>[0],
+) {
+  const backoffs = [1500, 4000];
+  for (let i = 0; ; i++) {
+    try {
+      return await client.models.generateContent(params);
+    } catch (err) {
+      if (is429(err) && i < backoffs.length) {
+        logger.warn("Gemini 429 — backing off", { attempt: i + 1, model });
+        await sleep(backoffs[i]!);
+        continue;
+      }
+      throw err;
+    }
+  }
 }
 
 /** Translate a Gemini SDK error into a user-safe AppError. */
@@ -182,28 +218,28 @@ export async function runFullAnalysis(
 
   const model = input.deep ? MODELS.analysis : MODELS.analysis;
 
-  const [scoreRes, atsRes, matchRes] = await Promise.all([
-    jsonCall(
-      resumeScoreResultSchema,
-      scorePrompt.system,
-      scorePrompt.user(input.parsedJson),
-      model,
-    ),
-    jsonCall(
-      atsReportResultSchema,
-      atsPrompt.system,
-      atsPrompt.user(input.rawText, input.parsedJson),
-      MODELS.fast,
-    ),
-    input.jdText
-      ? jsonCall(
-          matchResultSchema,
-          matchPrompt.system,
-          matchPrompt.user(input.parsedJson, input.jdText),
-          model,
-        )
-      : Promise.resolve(null),
-  ]);
+  // Sequential (not parallel) to avoid bursting the Gemini free-tier per-minute
+  // request limit, which returns 429s when several calls fire at once.
+  const scoreRes = await jsonCall(
+    resumeScoreResultSchema,
+    scorePrompt.system,
+    scorePrompt.user(input.parsedJson),
+    model,
+  );
+  const atsRes = await jsonCall(
+    atsReportResultSchema,
+    atsPrompt.system,
+    atsPrompt.user(input.rawText, input.parsedJson),
+    MODELS.fast,
+  );
+  const matchRes = input.jdText
+    ? await jsonCall(
+        matchResultSchema,
+        matchPrompt.system,
+        matchPrompt.user(input.parsedJson, input.jdText),
+        model,
+      )
+    : null;
 
   const context = input.jdText
     ? `JOB DESCRIPTION (tailor suggestions to it):\n"""\n${input.jdText.slice(0, 6000)}\n"""`
