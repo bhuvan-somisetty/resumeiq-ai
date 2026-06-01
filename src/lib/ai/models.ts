@@ -3,8 +3,8 @@
  * capable, and free; override per-tier via env if needed.
  */
 export const MODELS = {
-  analysis: process.env.GEMINI_ANALYSIS_MODEL ?? "gemini-2.0-flash",
-  fast: process.env.GEMINI_FAST_MODEL ?? "gemini-2.0-flash",
+  analysis: process.env.GEMINI_ANALYSIS_MODEL ?? "gemini-2.5-flash",
+  fast: process.env.GEMINI_FAST_MODEL ?? "gemini-2.5-flash",
   embedding: process.env.GEMINI_EMBEDDING_MODEL ?? "text-embedding-004",
 } as const;
 
