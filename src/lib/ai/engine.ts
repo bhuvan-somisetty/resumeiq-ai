@@ -167,6 +167,7 @@ function mapGeminiError(err: unknown): AppError {
   return new AppError(
     "ANALYSIS_FAILED",
     "We couldn't complete the analysis. Please try again.",
+    { diag: `status=${status} ${cause.slice(0, 700)}` }, // TEMP diagnostic
   );
 }
 
