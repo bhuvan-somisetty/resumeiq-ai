@@ -1,5 +1,7 @@
 import Link from "next/link";
 import { cn } from "@/lib/utils";
+import { LogoMark } from "@/components/marketing/logo-mark";
+import { BRAND } from "@/lib/brand";
 
 export function Logo({ className }: { className?: string }) {
   return (
@@ -8,12 +10,10 @@ export function Logo({ className }: { className?: string }) {
       className={cn("group flex items-center gap-2.5", className)}
       aria-label="ResumeIQ AI home"
     >
-      <span className="relative flex size-8 items-center justify-center rounded-lg bg-gradient-to-br from-primary to-accent shadow-sm">
-        <span className="text-sm font-bold text-primary-foreground">R</span>
-        <span className="absolute -right-0.5 -top-0.5 size-2 rounded-full bg-success ring-2 ring-background" />
-      </span>
+      <LogoMark className="size-8 transition-transform duration-200 group-hover:scale-105" />
       <span className="text-[15px] font-semibold tracking-tight">
-        ResumeIQ<span className="text-muted-foreground"> AI</span>
+        {BRAND.name}
+        <span className="text-muted-foreground"> {BRAND.suffix}</span>
       </span>
     </Link>
   );
