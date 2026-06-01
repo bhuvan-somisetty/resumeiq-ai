@@ -140,7 +140,6 @@ function mapGeminiError(err: unknown): AppError {
     return new AppError(
       "RATE_LIMITED",
       "The analysis service is busy right now. Please try again in a moment.",
-      { diag: cause.slice(0, 800) }, // TEMP diagnostic — remove after debugging
     );
   }
   // 400/401/403 = bad/missing key or permission — don't leak details.
@@ -167,7 +166,6 @@ function mapGeminiError(err: unknown): AppError {
   return new AppError(
     "ANALYSIS_FAILED",
     "We couldn't complete the analysis. Please try again.",
-    { diag: `status=${status} ${cause.slice(0, 700)}` }, // TEMP diagnostic
   );
 }
 
