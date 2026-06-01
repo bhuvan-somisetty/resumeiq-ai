@@ -2,12 +2,5 @@
   "$schema": "https://openapi.vercel.sh/vercel.json",
   "framework": "nextjs",
   "buildCommand": "prisma generate && next build",
-  "installCommand": "npm install",
-  "functions": {
-    "src/app/api/guest/analyze/route.ts": { "maxDuration": 60 },
-    "src/app/api/analyses/route.ts": { "maxDuration": 60 },
-    "src/app/api/resumes/[id]/versions/[versionId]/parse/route.ts": {
-      "maxDuration": 60
-    }
-  }
+  "installCommand": "npm install"
 }
