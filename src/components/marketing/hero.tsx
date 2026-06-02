@@ -13,8 +13,8 @@ import {
 import { Button } from "@/components/ui/button";
 import { ShinyText } from "@/components/marketing/shiny-text";
 
-const HERO_VIDEO =
-  "https://d8j0ntlcm91z4.cloudfront.net/user_38xzZboKViGWJOttwIXH07lWA1P/hf_20260328_105406_16f4600d-7a92-4292-b96e-b19156c7830a.mp4";
+// Served statically from /public.
+const HERO_VIDEO = "/Create_an_second_seamless_lo.mp4";
 
 const CAPABILITIES = [
   { icon: ScanLine, label: "ATS optimization" },
