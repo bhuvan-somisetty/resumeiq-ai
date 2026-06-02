@@ -55,7 +55,9 @@ export function Hero() {
 
   return (
     // Exactly one viewport tall — the whole hero is visible without scrolling.
-    <section className="relative h-[100svh] w-full overflow-hidden bg-black text-white">
+    // `isolate` creates a stacking context so the negative-z video paints ABOVE
+    // the section's black background instead of being hidden behind it.
+    <section className="relative isolate h-[100svh] w-full overflow-hidden bg-black text-white">
       {/* Cinematic video background */}
       <video
         aria-hidden
