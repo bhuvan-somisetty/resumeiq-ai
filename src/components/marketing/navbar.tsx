@@ -9,9 +9,12 @@ import { Logo } from "@/components/marketing/logo";
 import { ThemeToggle } from "@/components/theme-toggle";
 import { Button } from "@/components/ui/button";
 
+// Absolute anchors (/#…) so these work from any page (e.g. /pricing), not just
+// the landing page — clicking navigates home and scrolls to the section.
 const links = [
-  { href: "#features", label: "Features" },
-  { href: "#how", label: "How it works" },
+  { href: "/", label: "Home" },
+  { href: "/#features", label: "Features" },
+  { href: "/#how", label: "How it works" },
   { href: "/pricing", label: "Pricing" },
 ];
 
