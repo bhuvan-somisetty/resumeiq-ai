@@ -168,7 +168,7 @@ export function Hero() {
               variant="outline"
               className="w-full rounded-full border-white/25 bg-white/5 px-7 text-white backdrop-blur-sm hover:bg-white/10 hover:text-white sm:w-auto"
             >
-              <Link href="#how">See Sample Report</Link>
+              <Link href="/#how">See Sample Report</Link>
             </Button>
           </motion.div>
         </motion.div>

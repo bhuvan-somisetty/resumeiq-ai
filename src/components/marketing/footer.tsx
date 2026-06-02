@@ -12,7 +12,7 @@ export function Footer() {
           </p>
         </div>
         <div className="flex flex-wrap gap-x-8 gap-y-2 text-sm text-muted-foreground">
-          <Link href="#features" className="hover:text-foreground">
+          <Link href="/#features" className="hover:text-foreground">
             Features
           </Link>
           <Link href="/pricing" className="hover:text-foreground">
